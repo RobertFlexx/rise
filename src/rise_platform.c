@@ -19,6 +19,9 @@
 
 #define RISE_RUN_DIR "/run/rise"
 #define RISE_TICKET_DIR "/run/rise/tickets"
+#define RISE_TICKET_VERSION "rise-ticket-v3"
+#define RISE_TICKET_SCOPE_MARKER "rise ticket scope: terminal-shell-v4"
+const char rise_ticket_scope_marker[] = RISE_TICKET_SCOPE_MARKER;
 #define RISE_DEFAULT_PATH "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 static const char *wrong_jokes[] = {
@@ -297,6 +300,48 @@ static int should_keep_env(const char *name, const char *env_keep) {
     return 0;
 }
 
+static int safe_dir_stat(const struct stat *st) {
+    if (!st) return 0;
+    if (!S_ISDIR(st->st_mode)) return 0;
+    if (st->st_uid != 0) return 0;
+    if ((st->st_mode & (S_IWGRP | S_IWOTH)) != 0) return 0;
+    return 1;
+}
+
+
+static int path_entry_parent_is_safe(const char *dir) {
+    char probe[PATH_MAX];
+
+    if (!dir || dir[0] != '/') return 0;
+    if (strlen(dir) >= sizeof(probe)) return 0;
+
+    snprintf(probe, sizeof(probe), "%s", dir);
+
+    for (;;) {
+        struct stat st;
+        if (stat(probe, &st) == 0) {
+            return safe_dir_stat(&st);
+        }
+
+        if (errno != ENOENT && errno != ENOTDIR) return 0;
+
+        char *slash = strrchr(probe, '/');
+        if (!slash) return 0;
+
+        if (slash == probe) {
+            probe[1] = '\0';
+        } else {
+            *slash = '\0';
+        }
+
+        if (strcmp(probe, "/") == 0) {
+            struct stat root_st;
+            if (stat("/", &root_st) != 0) return 0;
+            return safe_dir_stat(&root_st);
+        }
+    }
+}
+
 static int valid_secure_path(const char *path) {
     if (!path || !*path || strlen(path) > 4096) return 0;
 
@@ -318,10 +363,13 @@ static int valid_secure_path(const char *path) {
         dir[len] = '\0';
 
         struct stat st;
-        if (stat(dir, &st) != 0) return 0;
-        if (!S_ISDIR(st.st_mode)) return 0;
-        if (st.st_uid != 0) return 0;
-        if ((st.st_mode & (S_IWGRP | S_IWOTH)) != 0) return 0;
+        if (stat(dir, &st) == 0) {
+            if (!safe_dir_stat(&st)) return 0;
+        } else {
+            if ((errno != ENOENT && errno != ENOTDIR) || !path_entry_parent_is_safe(dir)) {
+                return 0;
+            }
+        }
 
         if (*p == ':') p++;
     }
@@ -464,29 +512,66 @@ static uint64_t fnv1a64(const char *s) {
     return h;
 }
 
+static int tty_scope_from_fd(int fd, char *out, size_t outsz) {
+    if (fd < 0 || !out || outsz == 0) return -1;
+    if (!isatty(fd)) return -1;
+
+    struct stat fd_st;
+    if (fstat(fd, &fd_st) != 0) return -1;
+    if (!S_ISCHR(fd_st.st_mode)) return -1;
+
+    char tty_path[PATH_MAX];
+    tty_path[0] = '\0';
+
+#if defined(_POSIX_VERSION)
+    if (ttyname_r(fd, tty_path, sizeof(tty_path)) != 0) {
+        tty_path[0] = '\0';
+    }
+#endif
+
+    /*
+     * terminal-shell-v4:
+     *
+     * This cache key is meant to feel like sudo/doas in daily terminal use:
+     * same terminal shell can reuse authentication, a new terminal shell asks
+     * again, and non-interactive/no-tty use does not reuse a tty ticket.
+     *
+     * Do not include process group in the key. Interactive shells with job
+     * control commonly put each foreground command into a fresh process group,
+     * which would make the cache miss after every command.
+     */
+    pid_t parent = getppid();
+    pid_t sid = getsid(0);
+
+    int n = snprintf(out, outsz,
+                     "terminal-shell-v4:"
+                     "fddev=%llu:fdino=%llu:fdrdev=%llu:"
+                     "path=%s:"
+                     "ppid=%ld:sid=%ld",
+                     (unsigned long long)fd_st.st_dev,
+                     (unsigned long long)fd_st.st_ino,
+                     (unsigned long long)fd_st.st_rdev,
+                     tty_path[0] ? tty_path : "unknown",
+                     (long)parent,
+                     (long)sid);
+    return (n < 0 || (size_t)n >= outsz) ? -1 : 0;
+}
+
 static int ticket_scope(char *out, size_t outsz, int tty_tickets, int require_tty) {
+    (void)require_tty;
+
     if (!out || outsz == 0) return -1;
 
     if (!tty_tickets) {
-        if (snprintf(out, outsz, "global") >= (int)outsz) return -1;
-        return 0;
-    }
-
-    char *tty = ttyname(STDIN_FILENO);
-    if (!tty) tty = ttyname(STDERR_FILENO);
-
-    if (tty) {
-        int n = snprintf(out, outsz, "tty:%s", tty);
+        int n = snprintf(out, outsz, "global");
         return (n < 0 || (size_t)n >= outsz) ? -1 : 0;
     }
 
-    if (require_tty) return -2;
+    if (tty_scope_from_fd(STDIN_FILENO, out, outsz) == 0) return 0;
+    if (tty_scope_from_fd(STDOUT_FILENO, out, outsz) == 0) return 0;
+    if (tty_scope_from_fd(STDERR_FILENO, out, outsz) == 0) return 0;
 
-    pid_t sid = getsid(0);
-    if (sid < 0) return -1;
-
-    int n = snprintf(out, outsz, "sid:%ld", (long)sid);
-    return (n < 0 || (size_t)n >= outsz) ? -1 : 0;
+    return -2;
 }
 
 static int ticket_path(uid_t caller_uid, uid_t target_uid, int tty_tickets, int require_tty,
@@ -538,7 +623,7 @@ int rise_ticket_check(uid_t caller_uid, uid_t target_uid, int tty_tickets,
 
     unsigned long ru = 0, tu = 0;
     unsigned long long rh = 0;
-    if (sscanf(buf, "rise-ticket-v1 %lu %lu %llx", &ru, &tu, &rh) != 3) return 1;
+    if (sscanf(buf, RISE_TICKET_VERSION " %lu %lu %llx", &ru, &tu, &rh) != 3) return 1;
     if (ru != (unsigned long)caller_uid || tu != (unsigned long)target_uid || rh != (unsigned long long)scope_hash) return 1;
 
     time_t now = time(NULL);
@@ -590,7 +675,7 @@ int rise_ticket_update(uid_t caller_uid, uid_t target_uid, int tty_tickets, int 
     }
 
     char buf[160];
-    int n = snprintf(buf, sizeof(buf), "rise-ticket-v1 %lu %lu %016llx\n",
+    int n = snprintf(buf, sizeof(buf), RISE_TICKET_VERSION " %lu %lu %016llx\n",
                      (unsigned long)caller_uid,
                      (unsigned long)target_uid,
                      (unsigned long long)scope_hash);
