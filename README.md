@@ -406,3 +406,39 @@ Useful future work:
 ## License
 
 MIT License
+
+## Performance
+
+`rise` is intentionally small internally:
+
+- compact Ada policy engine
+- direct `execv()` execution path
+- minimal PAM glue
+- small timestamp ticket system
+- no plugin framework
+- no shell execution
+- no large policy subsystem
+
+On one Exherbo Linux test system, cached non-interactive execution was benchmarked using `hyperfine`:
+
+```text
+Benchmark 1: rise -n true
+  Time (mean ± σ):       1.7 ms ±   0.2 ms
+
+Benchmark 2: sudo -n true
+  Time (mean ± σ):      11.1 ms ±   3.2 ms
+
+Summary
+  rise -n true ran
+    6.63 ± 2.14 times faster than sudo -n true
+```
+```
+
+Benchmark command:
+
+```sh
+hyperfine -N --warmup 20 'rise -n true' 'sudo -n true'
+```
+
+This benchmark measures cached-authentication execution only. Real-world performance depends on PAM configuration, system load, storage speed, and policy complexity.
+I dont code slop.
