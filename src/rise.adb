@@ -54,6 +54,9 @@ procedure Rise is
    function rise_file_is_executable (Path : chars_ptr) return int;
    pragma Import (C, rise_file_is_executable, "rise_file_is_executable");
 
+   function rise_canonical_executable (Path : chars_ptr; Out_Path : access chars_ptr) return int;
+   pragma Import (C, rise_canonical_executable, "rise_canonical_executable");
+
    function rise_pam_auth
      (Service : chars_ptr; User : chars_ptr; Attempts : int; Noninteractive : int; Jokes : int) return int;
    pragma Import (C, rise_pam_auth, "rise_pam_auth");
@@ -289,6 +292,8 @@ procedure Rise is
             when -3 => Die (Config_Path & " must be owned by root");
             when -4 => Die (Config_Path & " must not be writable by group/others");
             when -5 => Die (Config_Path & " is too large");
+            when -6 => Die (Config_Path & " must not have multiple hard links");
+            when -7 => Die (Config_Path & " must not contain NUL bytes");
             when others => Die ("cannot securely read " & Config_Path);
          end case;
       end if;
@@ -364,6 +369,26 @@ procedure Rise is
       return R = 0;
    end Is_Executable;
 
+   function Canonical_Executable (Path : String) return String is
+      C_Path : chars_ptr := New_String (Path);
+      Outp   : aliased chars_ptr := Null_Ptr;
+      R      : int;
+   begin
+      R := rise_canonical_executable (C_Path, Outp'Access);
+      Free (C_Path);
+
+      if R /= 0 then
+         case Integer (R) is
+            when -2 => Die ("path is not absolute: " & Path);
+            when -3 => Die ("path cannot be canonicalized: " & Path);
+            when -4 => Die ("not a regular executable: " & Path);
+            when others => Die ("invalid executable path: " & Path);
+         end case;
+      end if;
+
+      return C_String_Value_And_Free (Outp, "canonical executable");
+   end Canonical_Executable;
+
    function Resolve_Command (Cmd : String; Secure_Path : String) return String is
       Pos : Positive := Secure_Path'First;
    begin
@@ -371,11 +396,11 @@ procedure Rise is
          Die ("empty command");
       end if;
 
+      --  Absolute input is resolved through realpath(3) in the C layer before
+      --  policy matching. This prevents aliases such as //bin/sh or
+      --  /usr/bin/../bin/sh from bypassing exact-path allowlists.
       if Cmd (Cmd'First) = '/' then
-         if Is_Executable (Cmd) then
-            return Cmd;
-         end if;
-         Die ("not executable: " & Cmd);
+         return Canonical_Executable (Cmd);
       end if;
 
       if Contains (Cmd, '/') then
@@ -400,10 +425,16 @@ procedure Rise is
                   Dir  : constant String := Secure_Path (Start .. Stop - 1);
                   Full : constant String := Dir & "/" & Cmd;
                begin
+                  if Dir = "" or else Dir (Dir'First) /= '/' then
+                     Die ("secure_path entries must be absolute paths");
+                  end if;
+
                   if Is_Executable (Full) then
-                     return Full;
+                     return Canonical_Executable (Full);
                   end if;
                end;
+            else
+               Die ("secure_path contains an empty entry");
             end if;
 
             Pos := Stop + 1;
@@ -500,6 +531,20 @@ procedure Rise is
       return False;
    end Target_List_Matches;
 
+   function Command_Item_Matches (Item : String; Resolved_Command : String) return Boolean is
+      I : constant String := Trim (Item);
+   begin
+      if I = "" then
+         return False;
+      end if;
+
+      if I (I'First) /= '/' then
+         Die ("cmd entries must be absolute paths or 'any': " & I);
+      end if;
+
+      return Canonical_Executable (I) = Resolved_Command;
+   end Command_Item_Matches;
+
    function Command_List_Matches (List : String; Resolved_Command : String) return Boolean is
       L   : constant String := Trim (List);
       Pos : Positive := L'First;
@@ -524,7 +569,7 @@ procedure Rise is
             declare
                Item : constant String := Trim (L (Start .. Stop - 1));
             begin
-               if Item = Resolved_Command then
+               if Command_Item_Matches (Item, Resolved_Command) then
                   return True;
                end if;
             end;
