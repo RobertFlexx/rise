@@ -18,7 +18,7 @@
 The project is Ada-first. Ada owns the command-line handling, policy parser, rule evaluation, and execution decisions. C is kept as a narrow platform layer for the parts that are already C-shaped on Unix: PAM, user/group lookup, timestamp files, syslog, environment reset, and UID/GID switching. Ada is a nice language, and I'm probably gonna code in it more.
 AI was, is not, and will never be used in the codebase.
 
-***Current version is 0.2.1.***
+***Current version is 0.2.2***
 
 `rise` is not a fork of `sudo` or `doas`, and it does not copy either configuration language.
 
