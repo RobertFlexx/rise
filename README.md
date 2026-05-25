@@ -16,7 +16,7 @@
 `rise` is a small privilege launcher for Unix-like systems. Something i made on my freetime. It is meant to fill the space between the large, policy-rich world of `sudo` and the intentionally tiny shape of `doas`: structured configuration, PAM authentication, timestamped authentication persistence, clean environment handling, and a compact codebase that can be read without needing a week and a map.
 
 The project is Ada-first. Ada owns the command-line handling, policy parser, rule evaluation, and execution decisions. C is kept as a narrow platform layer for the parts that are already C-shaped on Unix: PAM, user/group lookup, timestamp files, syslog, environment reset, and UID/GID switching. Ada is a nice language, and I'm probably gonna code in it more.
-AI was used for the banner art, couldn't be bothered to do my own artwork as I am not an artist.
+AI was used for the banner art, couldn't be bothered to do my own artwork as I am not an artist. No AI Slopcode in the codebase, no worries.
 
 `rise` is not a fork of `sudo` or `doas`, and it does not copy either configuration language.
 
