@@ -432,7 +432,6 @@ Summary
   rise -n true ran
     6.63 ± 2.14 times faster than sudo -n true
 ```
-```
 
 Benchmark command:
 
