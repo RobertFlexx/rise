@@ -1,0 +1,164 @@
+.TH RISE 1 "May 2026" "rise 0.2" "User Commands"
+.SH NAME
+rise \- small Ada-first privilege launcher
+.SH SYNOPSIS
+.B rise
+[\fB\-n\fR]
+[\fB\-u\fR \fIuser\fR]
+\fIcommand\fR
+[\fIargs...\fR]
+.br
+.B rise
+\fB\-k\fR
+[\fB\-u\fR \fIuser\fR]
+.br
+.B rise
+\fB\-C\fR
+.SH DESCRIPTION
+.B rise
+is a small sudo/doas-style privilege launcher. It evaluates
+.IR /etc/rise.conf ,
+authenticates through PAM when required, sanitizes the environment, switches
+to the target user, and executes the requested command directly with
+.BR execv (3).
+.PP
+It does not invoke a shell and does not implement sudoers or doas.conf syntax.
+.SH OPTIONS
+.TP
+.BR \-u ", " \-\-user " " \fIuser\fR
+Run the command as
+.IR user .
+The default target user is
+.BR root .
+.TP
+.BR \-n ", " \-\-non-interactive
+Do not prompt for a password. If authentication would be required and no
+valid timestamp ticket exists, fail.
+.TP
+.BR \-k ", " \-\-forget
+Forget the current cached authentication ticket for the invoking user and
+target user.
+.TP
+.BR \-C ", " \-\-check-config
+Read and parse
+.I /etc/rise.conf
+and report whether the syntax is accepted.
+.TP
+.BR \-h ", " \-\-help
+Show usage information.
+.SH CONFIGURATION
+The configuration file is
+.IR /etc/rise.conf .
+It must be owned by root and must not be writable by group or others.
+.PP
+The file uses INI-style sections. Rules are evaluated top-to-bottom. The first
+matching rule wins. If no rule matches, access is denied.
+.SS Defaults
+Example:
+.PP
+.nf
+[defaults]
+format = 2
+timestamp = yes
+timestamp_timeout = 300
+tty_tickets = yes
+require_tty = no
+jokes = on
+secure_path = /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+env_keep = TERM,COLORTERM,LANG,LC_*
+.fi
+.TP
+.B timestamp
+Enable or disable cached authentication tickets.
+.TP
+.B timestamp_timeout
+Ticket lifetime in seconds.
+.TP
+.B tty_tickets
+When enabled, tickets are scoped by terminal, falling back to session id when
+no terminal exists and
+.B require_tty
+is disabled.
+.TP
+.B require_tty
+Require a tty for PAM authentication and timestamp tickets.
+.TP
+.B secure_path
+Path used to resolve command names and to set the final PATH.
+.TP
+.B env_keep
+Comma-separated environment names or prefix patterns to preserve after validation.
+.SS Rules
+Example:
+.PP
+.nf
+[rule wheel-root]
+action = allow
+who = group:wheel
+target = root
+auth = pam
+persist = default
+cmd = any
+.fi
+.TP
+.B action
+Either
+.B allow
+or
+.BR deny .
+.TP
+.B who
+A comma-separated list of principals:
+.BI user: name
+or
+.BI group: name .
+.TP
+.B target
+Target account list, or
+.BR any .
+.TP
+.B auth
+Either
+.B pam
+or
+.BR none .
+Use
+.B none
+only with narrow command allowlists.
+.TP
+.B persist
+.BR default ,
+.BR yes ,
+or
+.BR no .
+Controls whether successful PAM authentication writes a timestamp ticket.
+.TP
+.B timeout
+Optional rule-specific timestamp timeout in seconds.
+.TP
+.B cmd
+.B any
+or a comma-separated list of absolute executable paths.
+.SH FILES
+.TP
+.I /etc/rise.conf
+Main policy file.
+.TP
+.I /etc/pam.d/rise
+PAM service configuration.
+.TP
+.I /run/rise/tickets
+Root-owned timestamp ticket directory.
+.SH SECURITY NOTES
+.B rise
+is designed to fail closed. It refuses symlinked configs, group/other-writable
+configs, relative command paths containing slashes, and arbitrary environment
+inheritance.
+.PP
+No short program becomes trustworthy merely by existing. Audit it, test it,
+and keep rules boring.
+.SH SEE ALSO
+.BR pam (8),
+.BR execv (3),
+.BR sudo (8),
+.BR doas (1)

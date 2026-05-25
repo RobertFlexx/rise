@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="150" height="32" viewBox="0 0 150 32" role="img" aria-label="language: Ada">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+  </defs>
+  <rect width="150" height="32" rx="8" fill="#0b1020"/>
+  <rect width="86" height="32" rx="8" fill="#1f2937"/>
+  <path d="M78 0H86V32H78Z" fill="#1f2937"/>
+  <rect x="86" width="64" height="32" rx="8" fill="url(#g)"/>
+  <path d="M86 0H94V32H86Z" fill="url(#g)"/>
+  <text x="43.0" y="20.5" text-anchor="middle" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="12" font-weight="700" fill="#f8fafc">language</text>
+  <text x="118.0" y="20.5" text-anchor="middle" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="12" font-weight="700" fill="#f8fafc">Ada</text>
+</svg>

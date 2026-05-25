@@ -1,0 +1,8 @@
+# PAM config for rise.
+# Distros vary. This default matches many Arch/Gentoo/Exherbo style systems.
+auth       include      system-auth
+account    include      system-auth
+
+# Debian/Ubuntu alternative:
+# auth       include      common-auth
+# account    include      common-account
