@@ -259,7 +259,7 @@ cmd = any
 
 [rule safe-nopass]
 action = allow
-who = user:robert
+who = user:test
 target = root
 auth = none
 cmd = /usr/bin/id, /usr/bin/true
