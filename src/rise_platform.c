@@ -529,17 +529,6 @@ static int tty_scope_from_fd(int fd, char *out, size_t outsz) {
     }
 #endif
 
-    /*
-     * terminal-shell-v4:
-     *
-     * This cache key is meant to feel like sudo/doas in daily terminal use:
-     * same terminal shell can reuse authentication, a new terminal shell asks
-     * again, and non-interactive/no-tty use does not reuse a tty ticket.
-     *
-     * Do not include process group in the key. Interactive shells with job
-     * control commonly put each foreground command into a fresh process group,
-     * which would make the cache miss after every command.
-     */
     pid_t parent = getppid();
     pid_t sid = getsid(0);
 
